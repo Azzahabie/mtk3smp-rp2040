@@ -22,6 +22,10 @@
 #include <tk/tkernel.h>
 #include "sysdepend.h"
 
+#ifndef PF001_APPLY_FIX	/* TEMP PF-001 repro */
+#define PF001_APPLY_FIX 1
+#endif
+
 /* 
  * PLL initialization
  */
@@ -103,6 +107,15 @@ EXPORT void startup_clock(ATR clkatr)
 	while(!(in_w(CLK_REF+CLK_x_SELECTED)&(1<<2)));
 
 	out_w(CLK_REF+CLK_x_DIV, div);
+
+	/* TEMP PF-001 repro: park the tick value seen at boot in WATCHDOG
+	   SCRATCH0 (RAM is not initialised yet), and which image this is in
+	   SCRATCH1. */
+	out_w(0x4005800C, in_w(0x4005802C));
+	out_w(0x40058010, PF001_APPLY_FIX);
+#if PF001_APPLY_FIX
+	out_w(0x4005802C, (1<<9) | XOSC_MHz);	/* WATCHDOG_TICK = ENABLE | 12 */
+#endif
 
 	/* CLK SYS settings */
 	div = (TMCLK_MHz << 8) / TMCLK_MHz;

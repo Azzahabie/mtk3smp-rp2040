@@ -180,6 +180,61 @@ LOCAL void consumer_task(INT stacd, void *exinf)
  *  Monitor -- woken by the event flag, prints a line
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ *  TEMP PF-001 repro: TIMER rate against the kernel clock
+ * ------------------------------------------------------------------ */
+#define PF_REG(a)	(*(volatile UW *)(a))
+#define PF_TIMERAWL	PF_REG(0x40054028)
+
+LOCAL void pf001_print_tick(const char *name, UW v)
+{
+	tm_printf((UB *)"%s=0x%03x (enable=%u cycles=%u running=%u)",
+		  name, v, (v >> 9) & 1, v & 0x1ff, (v >> 10) & 1);
+}
+
+LOCAL void pf001_ratio(const char *name, UW us, UW ms)
+{
+	UW r = (UW)(((unsigned long long)us * 1000ULL) / (ms ? ms : 1));
+
+	tm_printf((UB *)"%s %u.%03u us/ms", name, r / 1000, r % 1000);
+}
+
+LOCAL void pf001_report(void)
+{
+	UW	chip = PF_REG(0x40064008);	/* VREG_AND_CHIP_RESET CHIP_RESET */
+	UW	reason = PF_REG(0x40058008);	/* WATCHDOG REASON */
+	SYSTIM	k0, k1;
+	UW	u0, u1, us, ms, total_us = 0, total_ms = 0;
+	INT	i;
+
+	tm_printf((UB *)"[pf001] upstream main, fix compiled %s\n",
+		  PF_REG(0x40058010) ? "IN" : "OUT");
+	tm_printf((UB *)"[pf001] ");
+	pf001_print_tick("tick_at_boot", PF_REG(0x4005800C));
+	tm_printf((UB *)"  ");
+	pf001_print_tick("tick_now", PF_REG(0x4005802C));
+	tm_printf((UB *)"\n");
+	tm_printf((UB *)"[pf001] wd_reason=0x%x  chip_reset=0x%08x (por=%u run=%u psm_restart=%u)\n",
+		  reason, chip, (chip >> 8) & 1, (chip >> 16) & 1, (chip >> 20) & 1);
+
+	/* 6 x 10 s windows: TIMER us against kernel (SysTick) ms */
+	tk_get_otm(&k0); u0 = PF_TIMERAWL;
+	for(i = 1; i <= 6; i++) {
+		tk_dly_tsk(10000);
+		tk_get_otm(&k1); u1 = PF_TIMERAWL;
+		ms = k1.lo - k0.lo;
+		us = u1 - u0;
+		total_us += us; total_ms += ms;
+		tm_printf((UB *)"[pf001] window %d/6: kernel=%u ms timer=%u us ", i, ms, us);
+		pf001_ratio("->", us, ms);
+		pf001_ratio("   cumulative", total_us, total_ms);
+		tm_printf((UB *)"\n");
+		k0 = k1; u0 = u1;
+	}
+	tm_printf((UB *)"[pf001] done: fix compiled %s, tick cycles now=%u\n",
+		  PF_REG(0x40058010) ? "IN" : "OUT", PF_REG(0x4005802C) & 0x1ff);
+}
+
 LOCAL void monitor_task(INT stacd, void *exinf)
 {
 	UINT	ptn;
@@ -206,6 +261,8 @@ LOCAL void monitor_task(INT stacd, void *exinf)
 #endif
 	tm_printf((UB *)"producer -> [mbf] -> consumer, %d credits, %d ms period\n\n",
 		  CREDITS, PRODUCE_MS);
+
+	pf001_report();	/* TEMP PF-001 repro */
 
 	while(1) {
 		/* Wait until both ends have moved at least once since the
