@@ -231,8 +231,16 @@ LOCAL void pf001_report(void)
 		tm_printf((UB *)"\n");
 		k0 = k1; u0 = u1;
 	}
-	tm_printf((UB *)"[pf001] done: fix compiled %s, tick cycles now=%u\n",
-		  PF_REG(0x40058010) ? "IN" : "OUT", PF_REG(0x4005802C) & 0x1ff);
+	/* Repeat the boot-time evidence here.  The header above is printed
+	   ~0.5 s after USB enumeration, before the host terminal has
+	   necessarily reopened the port, so it is often lost; this line comes
+	   ~60 s later and is always captured.  Added after runs 1-3 and the
+	   hotspot run 4, which lost the header on many boots.  Values are the
+	   ones read at the top of this function (SCRATCH0 holds the tick seen
+	   in startup_clock()), so printing them late does not change them. */
+	tm_printf((UB *)"[pf001] done: fix compiled %s, tick cycles now=%u | at boot: cycles=%u wd_reason=0x%x por=%u run=%u\n",
+		  PF_REG(0x40058010) ? "IN" : "OUT", PF_REG(0x4005802C) & 0x1ff,
+		  PF_REG(0x4005800C) & 0x1ff, reason, (chip >> 8) & 1, (chip >> 16) & 1);
 }
 
 LOCAL void monitor_task(INT stacd, void *exinf)
